@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Predictive Inventory Restocking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        /* A deep, dark space-like blue for the base */
+        background-color: #020412; 
+        /* Multiple radial gradients create a "nebula" or "glowing glass" effect */
+        background-image:
+          radial-gradient(circle at 15% 25%, rgba(100, 116, 225, 0.2), transparent 40%), /* Indigo glow */
+          radial-gradient(circle at 85% 65%, rgba(139, 92, 246, 0.15), transparent 40%), /* Violet glow */
+          radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.1), transparent 30%); /* Sky blue glow */
+        background-size: 200% 200%;
+        animation: move-glow 20s ease-in-out infinite alternate;
+        color-scheme: dark;
+      }
+      @keyframes move-glow {
+        from {
+          background-position: 0% 0%;
+        }
+        to {
+          background-position: 100% 100%;
+        }
+      }
+      /* Custom scrollbar for a better look */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.25.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.3.0",
+    "react-qr-code": "https://aistudiocdn.com/react-qr-code@^2.0.12",
+    "uuid": "https://aistudiocdn.com/uuid@^13.0.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Predictive Inventory Restocking",
+  "description": "An intelligent inventory management system that uses Gemini to predict sales trends and provide proactive restocking recommendations to prevent stockouts and optimize inventory levels.",
+  "requestFramePermissions": []
+}
