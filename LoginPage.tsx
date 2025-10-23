@@ -17,10 +17,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl p-8 text-white">
-          <h1 className="text-3xl font-bold text-center mb-2">Welcome to Invo AI</h1>
-          <p className="text-center text-gray-300 mb-8">Please sign in to continue</p>
+          <h1 className="text-2xl font-bold text-center mb-2 text-cyan-300">Premierlux Dental Clinic</h1>
+          <p className="text-center text-gray-300 mb-8 leading-tight">A Smart and Predictive Inventory Management system with AI Forecasting, QR Code tracking, and audit compliance.</p>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-1">Username</label>
@@ -60,8 +60,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <p className="text-gray-400 text-center">Use any of these to log in. <br/>(Password for all is: <span className="font-mono text-yellow-300">password123</span>)</p>
             <ul className="mt-3 space-y-1 text-center">
                 <li><span className="font-semibold text-gray-200">Admin:</span> <span className="font-mono text-cyan-300">admin</span></li>
-                <li><span className="font-semibold text-gray-200">Staff (Downtown):</span> <span className="font-mono text-cyan-300">maria</span></li>
-                <li><span className="font-semibold text-gray-200">Staff (Westside):</span> <span className="font-mono text-cyan-300">sam</span></li>
+                <li><span className="font-semibold text-gray-200">Staff (Downtown Clinic):</span> <span className="font-mono text-cyan-300">maria</span></li>
+                <li><span className="font-semibold text-gray-200">Staff (Westside Clinic):</span> <span className="font-mono text-cyan-300">sam</span></li>
             </ul>
         </div>
       </div>

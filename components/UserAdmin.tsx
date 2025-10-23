@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import type { User, Branch } from '../types';
 
@@ -24,7 +22,7 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, branches, onCreateUser, on
         return;
     }
     if (role === 'Staff' && !branchId) {
-        // Handle error: Staff must have a branch
+        // Handle error: Staff must have a clinic
         return;
     }
     onCreateUser({
@@ -53,15 +51,19 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, branches, onCreateUser, on
                 <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Name</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Username</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Role</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Assigned Branch</th>
+                <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Assigned Clinic</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10">
               {users.map(user => (
                 <tr key={user.id}>
-                  <td className="py-4 px-4 font-medium text-gray-100">{user.name}</td>
-                  <td className="py-4 px-4 text-gray-300">{user.username}</td>
+                  <td className="py-4 px-4 font-medium text-gray-100">
+                    <div className="truncate max-w-xs" title={user.name}>{user.name}</div>
+                  </td>
+                  <td className="py-4 px-4 text-gray-300">
+                    <div className="truncate max-w-xs" title={user.username}>{user.username}</div>
+                  </td>
                   <td className="py-4 px-4 text-gray-300">{user.role}</td>
                   <td className="py-4 px-4 text-gray-300">{user.branchId ? branches.find(b => b.id === user.branchId)?.name : 'N/A'}</td>
                   <td className="py-4 px-4 text-center">
@@ -104,7 +106,7 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, branches, onCreateUser, on
           </div>
           {role === 'Staff' && (
             <div>
-              <label htmlFor="branch" className="block text-sm font-medium text-gray-300 mb-1">Assign to Branch</label>
+              <label htmlFor="branch" className="block text-sm font-medium text-gray-300 mb-1">Assign to Clinic</label>
               <select id="branch" value={branchId} onChange={e => setBranchId(e.target.value)} className="w-full px-4 py-2 bg-black/20 text-white border border-white/30 rounded-lg focus:ring-2 focus:ring-blue-400 transition" required>
                 {branches.map(b => <option key={b.id} value={b.id} className="bg-gray-800">{b.name}</option>)}
               </select>

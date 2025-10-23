@@ -1,4 +1,5 @@
 
+
 import React, { useMemo } from 'react';
 import type { InventoryItem } from '../types';
 
@@ -27,7 +28,6 @@ interface DashboardMetricsProps {
     kpis: {
         totalInventoryValue: number;
         stockTurnover: number;
-        nearingExpiryCount: number;
     }
 }
 
@@ -39,7 +39,7 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({ data, alertCount, k
   }, [data]);
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <MetricCard 
         title="Total Products" 
         value={metrics.totalProducts}
@@ -78,16 +78,6 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({ data, alertCount, k
            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5" />
            </svg>
-        }
-      />
-      <MetricCard 
-        title="Nearing Expiry (30d)" 
-        value={kpis.nearingExpiryCount}
-        color="bg-red-500/20 text-red-300"
-        icon={
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
         }
       />
     </div>

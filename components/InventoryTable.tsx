@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import type { InventoryItem, Branch, Supplier, User } from '../types';
 import UrgencyPill from './UrgencyPill';
@@ -13,6 +12,7 @@ interface InventoryTableProps {
   onShowQR: (product: InventoryItem) => void;
   onEditProduct: (product: InventoryItem) => void;
   onDeleteProduct: (productId: string) => void;
+  onAddNewSupplyClick: () => void;
   currentUser: User;
 }
 
@@ -42,7 +42,7 @@ const AdminViewRow: React.FC<{ item: InventoryItem; branches: Branch[]; getSuppl
         <>
         <tr className="hover:bg-white/5 transition-colors">
             <td className="py-3 px-4">
-                <div className="font-medium text-gray-100">{item.name}</div>
+                <div className="font-medium text-gray-100 truncate max-w-xs" title={item.name}>{item.name}</div>
                 <div className="text-xs text-gray-400">Min Stock: {item.minStockLevel ?? 'N/A'}</div>
             </td>
             <td className="py-3 px-4 text-sm text-gray-300">{getSupplierName(item.supplierId)}</td>
@@ -68,17 +68,29 @@ const AdminViewRow: React.FC<{ item: InventoryItem; branches: Branch[]; getSuppl
          {isExpanded && (
             <tr>
                 <td colSpan={5} className="p-4 bg-black/20">
-                    <p className="font-semibold text-gray-200">Branch Details:</p>
-                    <ul className="list-disc list-inside text-gray-300 text-sm mt-2">
-                        {item.stockLevels.map(sl => (
-                            <li key={sl.branchId}>
-                                <span className="font-medium">{branches.find(b => b.id === sl.branchId)?.name}:</span> {sl.quantity} units
-                                {item.branchSuggestions?.find(bs => bs.branchId === sl.branchId) &&
-                                    <span className="text-yellow-400 ml-2">(Suggestion: Restock {item.branchSuggestions.find(bs => bs.branchId === sl.branchId)?.restockAmount})</span>
-                                }
-                            </li>
-                        ))}
-                    </ul>
+                    <div className="space-y-3">
+                    {item.stockLevels.map(sl => {
+                        const branchTotal = sl.batches.reduce((sum, b) => sum + b.quantity, 0);
+                        if(branchTotal === 0) return null;
+                        return (
+                        <div key={sl.branchId}>
+                             <p className="font-semibold text-gray-200">{branches.find(b => b.id === sl.branchId)?.name} - Total: {branchTotal} units</p>
+                             <div className="space-y-2 mt-2">
+                                {sl.batches.map(batch => (
+                                    <div key={batch.batchId} className="grid grid-cols-3 gap-x-4 items-center bg-black/20 p-2 rounded-md text-sm">
+                                        <span className="font-medium text-gray-100 col-span-1">{batch.quantity} units</span>
+                                        <span className="text-gray-400 col-span-1">
+                                            Received: {new Date(batch.dateReceived).toLocaleDateString()}
+                                        </span>
+                                        <span className={`col-span-1 ${batch.expiryDate ? 'text-yellow-300 font-semibold' : 'text-gray-500'}`}>
+                                            Expires: {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : 'N/A'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )})}
+                    </div>
                 </td>
             </tr>
          )}
@@ -87,42 +99,90 @@ const AdminViewRow: React.FC<{ item: InventoryItem; branches: Branch[]; getSuppl
 };
 
 
-const StaffViewRow: React.FC<{ item: InventoryItem; getSupplierName: (id: string) => string; onAdjustStock: (p: InventoryItem) => void; onTransferStock: (p: InventoryItem) => void; onShowQR: (p: InventoryItem) => void; onEditProduct: (p: InventoryItem) => void; onDeleteProduct: (productId: string) => void; }> = 
-({ item, getSupplierName, onAdjustStock, onTransferStock, onShowQR, onEditProduct, onDeleteProduct }) => {
+const StaffViewRow: React.FC<{ item: InventoryItem; branches: Branch[]; getSupplierName: (id: string) => string; onAdjustStock: (p: InventoryItem) => void; onTransferStock: (p: InventoryItem) => void; onShowQR: (p: InventoryItem) => void; onEditProduct: (p: InventoryItem) => void; onDeleteProduct: (productId: string) => void; }> = 
+({ item, branches, getSupplierName, onAdjustStock, onTransferStock, onShowQR, onEditProduct, onDeleteProduct }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
     return (
-        <tr className="hover:bg-white/5 transition-colors">
-            <td className="py-3 px-4">
-                <div className="font-medium text-gray-100">{item.name}</div>
-                <div className="text-xs text-gray-400">Min Stock: {item.minStockLevel ?? 'N/A'}</div>
-            </td>
-            <td className="py-3 px-4 text-sm text-gray-300">{getSupplierName(item.supplierId)}</td>
-            <td className="py-3 px-4 text-center font-semibold text-lg text-gray-100">{item.totalStock.toLocaleString()}</td>
-            <td className="py-3 px-4 text-center"><UrgencyPill urgency={item.urgency} /></td>
-            <td className="py-3 px-4 text-center">
-                <RowActions 
-                    item={item} 
-                    isAdmin={false} 
-                    onAdjustStock={() => onAdjustStock(item)} 
-                    onTransferStock={() => onTransferStock(item)} 
-                    onShowQR={() => onShowQR(item)}
-                    onEditProduct={() => onEditProduct(item)}
-                    onDeleteProduct={() => onDeleteProduct(item.id)}
-                />
-            </td>
-        </tr>
+        <>
+            <tr className="hover:bg-white/5 transition-colors">
+                <td className="py-3 px-4">
+                    <div className="font-medium text-gray-100 truncate max-w-xs" title={item.name}>{item.name}</div>
+                    <div className="text-xs text-gray-400">Min Stock: {item.minStockLevel ?? 'N/A'}</div>
+                </td>
+                <td className="py-3 px-4 text-sm text-gray-300">{getSupplierName(item.supplierId)}</td>
+                <td className="py-3 px-4 text-center font-semibold text-lg text-gray-100">{item.totalStock.toLocaleString()}</td>
+                <td className="py-3 px-4 text-center"><UrgencyPill urgency={item.urgency} /></td>
+                <td className="py-3 px-4 text-center">
+                    <div className="flex items-center justify-center space-x-1">
+                        <RowActions 
+                            item={item} 
+                            isAdmin={false} 
+                            onAdjustStock={() => onAdjustStock(item)} 
+                            onTransferStock={() => onTransferStock(item)} 
+                            onShowQR={() => onShowQR(item)}
+                            onEditProduct={() => onEditProduct(item)}
+                            onDeleteProduct={() => onDeleteProduct(item.id)}
+                        />
+                         <button onClick={() => setIsExpanded(!isExpanded)} className="text-gray-300 hover:text-white p-1" title="Expand Details">
+                            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {isExpanded && (
+                <tr>
+                    <td colSpan={5} className="p-4 bg-black/20">
+                        <div className="space-y-3">
+                        {item.stockLevels.map(sl => {
+                            const branchTotal = sl.batches.reduce((sum, b) => sum + b.quantity, 0);
+                            if(branchTotal === 0) return null;
+                            return (
+                            <div key={sl.branchId}>
+                                 <p className="font-semibold text-gray-200">{branches.find(b => b.id === sl.branchId)?.name} - Total: {branchTotal} units</p>
+                                 <div className="space-y-2 mt-2">
+                                    {sl.batches.map(batch => (
+                                        <div key={batch.batchId} className="grid grid-cols-3 gap-x-4 items-center bg-black/20 p-2 rounded-md text-sm">
+                                            <span className="font-medium text-gray-100 col-span-1">{batch.quantity} units</span>
+                                            <span className="text-gray-400 col-span-1">
+                                                Received: {new Date(batch.dateReceived).toLocaleDateString()}
+                                            </span>
+                                            <span className={`col-span-1 ${batch.expiryDate ? 'text-yellow-300 font-semibold' : 'text-gray-500'}`}>
+                                                Expires: {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : 'N/A'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )})}
+                        </div>
+                    </td>
+                </tr>
+            )}
+        </>
     )
 };
 
 
-const InventoryTable: React.FC<InventoryTableProps> = ({ inventory, branches, suppliers, onAdjustStock, onTransferStock, onShowQR, onEditProduct, onDeleteProduct, currentUser }) => {
+const InventoryTable: React.FC<InventoryTableProps> = ({ inventory, branches, suppliers, onAdjustStock, onTransferStock, onShowQR, onEditProduct, onDeleteProduct, onAddNewSupplyClick, currentUser }) => {
   const getSupplierName = (supplierId: string) => suppliers.find(s => s.id === supplierId)?.name || 'Unknown';
   const isAdmin = currentUser.role === 'Admin';
   
   return (
     <div className="bg-white/10 backdrop-blur-lg p-4 sm:p-6 rounded-xl border border-white/20">
-      <h2 className="text-xl font-semibold text-gray-200 mb-4">
-        {isAdmin ? 'Full Supplies List' : `Supplies for ${branches.find(b => b.id === currentUser.branchId)?.name}`}
-      </h2>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <h2 className="text-xl font-semibold text-gray-200">
+            {isAdmin ? 'Full Supplies List' : `Supplies for ${branches.find(b => b.id === currentUser.branchId)?.name}`}
+        </h2>
+        <button 
+            onClick={onAddNewSupplyClick} 
+            className="flex items-center gap-2 bg-blue-500/50 text-white font-bold py-2 px-4 rounded-lg border border-blue-400 hover:bg-blue-500/80 transition"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            Add New Supply
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <div className="max-h-[600px] overflow-y-auto">
             <table className="w-full text-left min-w-max">
@@ -139,7 +199,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ inventory, branches, su
                         <tr>
                             <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Product</th>
                             <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase">Supplier</th>
-                            <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase text-center">Branch Stock</th>
+                            <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase text-center">Clinic Stock</th>
                             <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase text-center">Urgency</th>
                             <th className="py-3 px-4 text-sm font-semibold text-gray-300 uppercase text-center">Actions</th>
                         </tr>
@@ -149,7 +209,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ inventory, branches, su
                     {inventory.map(item => (
                         isAdmin ? 
                         <AdminViewRow key={item.id} item={item} getSupplierName={getSupplierName} onAdjustStock={onAdjustStock} onTransferStock={onTransferStock} onShowQR={onShowQR} onEditProduct={onEditProduct} onDeleteProduct={onDeleteProduct} branches={branches} /> :
-                        <StaffViewRow key={item.id} item={item} getSupplierName={getSupplierName} onAdjustStock={onAdjustStock} onTransferStock={onTransferStock} onShowQR={onShowQR} onEditProduct={onEditProduct} onDeleteProduct={onDeleteProduct} />
+                        <StaffViewRow key={item.id} item={item} getSupplierName={getSupplierName} onAdjustStock={onAdjustStock} onTransferStock={onTransferStock} onShowQR={onShowQR} onEditProduct={onEditProduct} onDeleteProduct={onDeleteProduct} branches={branches} />
                     ))}
                     {inventory.length === 0 && (
                         <tr>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { Product, Branch, Supplier, InventoryItem, PredictionResult, PricePredictionResult, BranchPerformance, AuditLog, User, StockLevel } from './types';
+import type { Product, Branch, Supplier, InventoryItem, PredictionResult, PricePredictionResult, BranchPerformance, AuditLog, User, StockLevel, StockBatch } from './types';
 
 // Mock data and services
 import { PRODUCTS, BRANCHES, SUPPLIERS, USERS } from './data';
@@ -13,17 +13,17 @@ import Header from './components/Header';
 import LoginPage from './LoginPage';
 import DashboardMetrics from './components/DashboardMetrics';
 import InventoryTable from './components/InventoryTable';
-import AddProductForm from './components/AddProductForm';
 import SupplierManager from './components/SupplierManager';
-import AuditLogView from './components/AuditLogView';
+import InventoryHistoryView from './components/InventoryHistoryView';
 import Chatbot from './components/Chatbot';
 import SupplierInsights from './components/SupplierInsights';
-import BranchAdmin from './components/BranchAdmin';
+import ClinicAdmin from './components/ClinicAdmin';
 import UserAdmin from './components/UserAdmin';
 import SuggestionCards from './components/SuggestionCards';
 import DashboardFilters from './components/DashboardFilters';
 import TopSlowMovers from './components/TopSlowMovers';
 import BranchPerformanceOverview from './components/BranchPerformanceOverview';
+import ExpiryAlertsCard from './components/ExpiryAlertsCard';
 
 
 // Modals
@@ -31,6 +31,8 @@ import StockAdjustmentModal from './components/StockAdjustmentModal';
 import StockTransferModal from './components/StockTransferModal';
 import QRCodeModal from './components/QRCodeModal';
 import EditProductModal from './components/EditProductModal';
+import ReorderModal from './components/ReorderModal';
+import AddProductModal from './components/AddProductModal';
 
 const App: React.FC = () => {
   // Authentication and User State
@@ -52,7 +54,7 @@ const App: React.FC = () => {
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<string[]>([]);
   
   // Modal State
-  const [modal, setModal] = useState<'adjust' | 'transfer' | 'qr' | 'edit' | null>(null);
+  const [modal, setModal] = useState<'adjust' | 'transfer' | 'qr' | 'edit' | 'reorder' | 'add' | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null);
   
   // Dashboard Filter State
@@ -61,9 +63,9 @@ const App: React.FC = () => {
 
   // --- Data & Auth ---
   
-  const addAuditLog = useCallback((action: string, details: string) => {
+  const addAuditLog = useCallback((action: string, details: string, context?: { productId?: string; branchId?: string; }) => {
     setAuditLogs(prev => [
-      { id: uuidv4(), timestamp: new Date().toISOString(), action, details },
+      { id: uuidv4(), timestamp: new Date().toISOString(), action, details, ...context },
       ...prev
     ]);
   }, []);
@@ -84,13 +86,40 @@ const App: React.FC = () => {
       const results = await getRestockPredictions(products, branches, suppliers);
       setPredictions(results);
       addAuditLog('Prediction Successful', `Generated restock predictions for ${results.length} products.`);
+
+      // Automated reordering logic
+      results.forEach(prediction => {
+        const product = products.find(p => p.id === prediction.productId);
+        if (!product) return;
+
+        const supplier = suppliers.find(s => s.id === product.supplierId);
+        if (!supplier || !supplier.quickReorderEnabled || prediction.urgency !== 'High') {
+            return;
+        }
+        
+        // Avoid flagging again if we just did
+        const recentFlagLog = auditLogs.find(log => 
+            log.action === 'Reorder Suggested' &&
+            log.details.includes(`product "${product.name}"`) &&
+            new Date().getTime() - new Date(log.timestamp).getTime() < 1000 * 60 * 60 // 1 hour cooldown
+        );
+
+        if (!recentFlagLog) {
+            addAuditLog(
+                'Reorder Suggested',
+                `High urgency for product "${product.name}". Suggested for admin review for supplier "${supplier.name}".`,
+                { productId: product.id }
+            );
+        }
+      });
+
     } catch (error) {
       console.error("Failed to get restock predictions", error);
       addAuditLog('Prediction Failed', 'Failed to get restock predictions from Gemini API.');
     } finally {
       setIsPredictionsLoading(false);
     }
-  }, [products, branches, suppliers, addAuditLog, isPredictionsLoading]);
+  }, [products, branches, suppliers, addAuditLog, isPredictionsLoading, auditLogs]);
 
   useEffect(() => {
     if (currentUser && products.length > 0) {
@@ -98,12 +127,27 @@ const App: React.FC = () => {
     }
   }, [currentUser, products.length, runRestockPredictions]);
 
+  // Redirect non-admins from admin pages
+  useEffect(() => {
+    const adminPages = ['Suppliers', 'Supplier Insights', 'Clinic Admin', 'User Admin', 'Audit Log'];
+    const staffPages = ['Inventory History'];
+
+    if (currentUser?.role !== 'Admin' && adminPages.includes(currentPage)) {
+        setCurrentPage('Dashboard');
+    }
+    if (currentUser?.role === 'Admin' && staffPages.includes(currentPage)) {
+        setCurrentPage('Dashboard');
+    }
+
+  }, [currentUser, currentPage]);
+
+
   // --- Memoized Derived State ---
 
   const inventoryData: InventoryItem[] = useMemo(() => {
     return products.map(p => {
       const prediction = predictions.find(pred => pred.productId === p.id);
-      const totalStock = p.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0);
+      const totalStock = p.stockLevels.reduce((sum, sl) => sum + sl.batches.reduce((batchSum, batch) => batchSum + batch.quantity, 0), 0);
       return { ...p, ...prediction, totalStock };
     });
   }, [products, predictions]);
@@ -114,11 +158,12 @@ const App: React.FC = () => {
     
     // Staff view: filter and reshape data
     return inventoryData.map(item => {
-        const branchStock = item.stockLevels.find(sl => sl.branchId === currentUser.branchId);
+        const branchStockLevel = item.stockLevels.find(sl => sl.branchId === currentUser.branchId);
+        const branchTotalStock = branchStockLevel ? branchStockLevel.batches.reduce((sum, batch) => sum + batch.quantity, 0) : 0;
         return {
           ...item,
-          totalStock: branchStock?.quantity ?? 0, // totalStock now means branchStock
-          stockLevels: branchStock ? [branchStock] : [],
+          totalStock: branchTotalStock, // totalStock now means branchStock
+          stockLevels: branchStockLevel ? [branchStockLevel] : [],
         };
       });
   }, [currentUser, inventoryData]);
@@ -131,74 +176,115 @@ const App: React.FC = () => {
   const dashboardFilteredData = useMemo(() => {
     if (dashboardBranchId === 'all') return inventoryData;
     return inventoryData.map(item => {
-      const branchStock = item.stockLevels.find(sl => sl.branchId === dashboardBranchId);
+      const branchStockLevel = item.stockLevels.find(sl => sl.branchId === dashboardBranchId);
+      const branchTotalStock = branchStockLevel ? branchStockLevel.batches.reduce((sum, batch) => sum + batch.quantity, 0) : 0;
       return {
         ...item,
-        totalStock: branchStock?.quantity ?? 0,
-        stockLevels: branchStock ? [branchStock] : [],
+        totalStock: branchTotalStock,
+        stockLevels: branchStockLevel ? [branchStockLevel] : [],
       };
     }).filter(item => item.totalStock > 0);
   }, [inventoryData, dashboardBranchId]);
   
-  const salesByProduct = useMemo(() => {
-    const salesMap = new Map<string, number>();
+  const usageByProduct = useMemo(() => {
+    const usageMap = new Map<string, number>();
     const days = parseInt(dashboardDateRange, 10);
     products.forEach(p => {
-      let totalSales = 0;
-      p.historicalSales.forEach(hs => {
+      let totalUsage = 0;
+      p.historicalUsage.forEach(hs => {
         if(dashboardBranchId === 'all' || hs.branchId === dashboardBranchId) {
-          totalSales += hs.sales.slice(-days).reduce((a, b) => a + b, 0);
+          totalUsage += hs.usage.slice(-days).reduce((a: number, b: number) => a + b, 0);
         }
       });
-      salesMap.set(p.id, totalSales);
+      usageMap.set(p.id, totalUsage);
     });
-    return salesMap;
+    return usageMap;
   }, [products, dashboardDateRange, dashboardBranchId]);
 
   const topSlowMovers = useMemo(() => {
-    const sortedProducts = [...products].sort((a, b) => (salesByProduct.get(b.id) ?? 0) - (salesByProduct.get(a.id) ?? 0));
+    const sortedProducts = [...products].sort((a, b) => (usageByProduct.get(b.id) ?? 0) - (usageByProduct.get(a.id) ?? 0));
     return {
       top: sortedProducts.slice(0, 5),
       slow: sortedProducts.slice(-5).reverse(),
     };
-  }, [products, salesByProduct]);
+  }, [products, usageByProduct]);
+
+  const expiringSoonItems = useMemo(() => {
+    const items = [];
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (const product of products) {
+        for (const stockLevel of product.stockLevels) {
+            for (const batch of stockLevel.batches) {
+                if (batch.expiryDate) {
+                    const expiry = new Date(batch.expiryDate);
+                    const expiryDayEnd = new Date(expiry);
+                    expiryDayEnd.setHours(23, 59, 59, 999);
+
+                    if (expiryDayEnd >= today && expiry <= thirtyDaysFromNow) {
+                        const timeDiff = expiry.getTime() - today.getTime();
+                        const daysUntilExpiry = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                        const branch = branches.find(b => b.id === stockLevel.branchId);
+                        items.push({
+                            productId: product.id,
+                            productName: product.name,
+                            branchId: stockLevel.branchId,
+                            branchName: branch ? branch.name : 'Unknown Clinic',
+                            quantity: batch.quantity,
+                            expiryDate: batch.expiryDate,
+                            daysUntilExpiry: daysUntilExpiry >= 0 ? daysUntilExpiry : 0,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return items.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
+  }, [products, branches]);
   
   const dashboardKpis = useMemo(() => {
-    const totalInventoryValue = dashboardFilteredData.reduce((sum, item) => sum + (item.totalStock * (item.purchasePrice ?? 0)), 0);
+    const totalInventoryValue = dashboardFilteredData.reduce((sum: number, item) => sum + (item.totalStock * (item.purchasePrice ?? 0)), 0);
     
-    const totalSalesValue = Array.from(salesByProduct.entries()).reduce((sum, [productId, quantity]) => {
+    const totalUsageValue = Array.from(usageByProduct.entries()).reduce((sum: number, [productId, quantity]) => {
       const product = products.find(p => p.id === productId);
       return sum + (quantity * (product?.purchasePrice ?? 0));
     }, 0);
 
-    const stockTurnover = totalInventoryValue > 0 ? totalSalesValue / totalInventoryValue : 0;
-    
-    const thirtyDaysFromNow = new Date();
-    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+    const stockTurnover = totalInventoryValue > 0 ? totalUsageValue / totalInventoryValue : 0;
 
-    const nearingExpiryCount = products.reduce((count, p) => {
-      const hasExpiringStock = p.stockLevels.some(sl => 
-        sl.expiryDate && new Date(sl.expiryDate) <= thirtyDaysFromNow
-      );
-      return count + (hasExpiringStock ? 1 : 0);
-    }, 0);
-
-    return { totalInventoryValue, stockTurnover, nearingExpiryCount };
-  }, [dashboardFilteredData, products, salesByProduct]);
+    return { totalInventoryValue, stockTurnover };
+  }, [dashboardFilteredData, products, usageByProduct]);
   
   const branchPerformanceData: BranchPerformance[] = useMemo(() => branches.map(branch => {
-        const branchProducts = inventoryData.filter(item => item.stockLevels.some(sl => sl.branchId === branch.id && sl.quantity > 0));
+        const branchProducts = inventoryData.filter(item => item.stockLevels.some(sl => sl.branchId === branch.id && sl.batches.some(b => b.quantity > 0)));
+        const totalStockUnits = branchProducts.reduce((sum, item) => {
+            const branchLevel = item.stockLevels.find(sl => sl.branchId === branch.id);
+            return sum + (branchLevel ? branchLevel.batches.reduce((bs, b) => bs + b.quantity, 0) : 0);
+        }, 0);
+        const branchMinStock = (item: InventoryItem) => item.stockLevels.find(sl => sl.branchId === branch.id)?.batches.reduce((t, b) => t + b.quantity, 0) ?? 0;
+
         return {
             branchId: branch.id, branchName: branch.name, totalProducts: branchProducts.length,
-            totalStockUnits: branchProducts.reduce((sum, item) => sum + (item.stockLevels.find(sl => sl.branchId === branch.id)?.quantity || 0), 0),
-            highUrgencyAlerts: inventoryData.filter(a => a.urgency === 'High' && (a.branchSuggestions?.some(bs => bs.branchId === branch.id) || (a.stockLevels.find(sl => sl.branchId === branch.id)?.quantity ?? 0) < (a.minStockLevel ?? 50))).length,
-            topSeller: products.sort((a, b) => {
-                const salesA = a.historicalSales.find(s => s.branchId === branch.id)?.sales.reduce((sum, s) => sum + s, 0) || 0;
-                const salesB = b.historicalSales.find(s => s.branchId === branch.id)?.sales.reduce((sum, s) => sum + s, 0) || 0;
-                return salesB - salesA;
+            totalStockUnits: totalStockUnits,
+            highUrgencyAlerts: inventoryData.filter(a => a.urgency === 'High' && (a.branchSuggestions?.some(bs => bs.branchId === branch.id) || branchMinStock(a) < (a.minStockLevel ?? 50))).length,
+            topUsedItem: [...products].sort((a, b) => {
+                const usageA = a.historicalUsage.find(s => s.branchId === branch.id)?.usage.reduce((sum: number, s: number) => sum + s, 0) || 0;
+                const usageB = b.historicalUsage.find(s => s.branchId === branch.id)?.usage.reduce((sum: number, s: number) => sum + s, 0) || 0;
+                return usageB - usageA;
             })[0]
         };
   }), [branches, inventoryData, products]);
+
+  const performanceDataForView = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'Admin') {
+        return branchPerformanceData;
+    }
+    return branchPerformanceData.filter(p => p.branchId === currentUser.branchId);
+  }, [currentUser, branchPerformanceData]);
 
 
   // --- Event Handlers ---
@@ -225,24 +311,25 @@ const App: React.FC = () => {
   
   const handleAcknowledge = useCallback((productId: string) => {
     setAcknowledgedAlerts(prev => [...prev, productId]);
-    addAuditLog('Alert Acknowledged', `Alert for product ${productId} acknowledged.`);
+    addAuditLog('Alert Acknowledged', `Alert for product ${productId} acknowledged.`, { productId });
   }, [addAuditLog]);
 
-  const handleAddProduct = (newProductData: Omit<Product, 'id' | 'historicalSales' | 'historicalPrices'> & { stockLevels: StockLevel[] }) => {
+  const handleAddProduct = (newProductData: Omit<Product, 'id' | 'historicalUsage' | 'historicalPrices'> & { stockLevels: StockLevel[] }) => {
     const newProduct: Product = {
       ...newProductData,
       id: `prod-${uuidv4()}`,
       stockLevels: newProductData.stockLevels,
-      historicalSales: branches.map(b => ({ branchId: b.id, sales: Array(7).fill(0) })),
+      historicalUsage: branches.map(b => ({ branchId: b.id, usage: Array(7).fill(0) })),
       historicalPrices: [{ date: new Date().toISOString().split('T')[0], price: newProductData.purchasePrice || 0 }]
     };
     setProducts(prev => [...prev, newProduct]);
     addAuditLog('Product Added', `New product "${newProduct.name}" created.`);
+    setModal(null);
   };
   
   const handleEditProduct = (updatedProduct: Product) => {
     setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-    addAuditLog('Product Edited', `Product "${updatedProduct.name}" (ID: ${updatedProduct.id}) updated.`);
+    addAuditLog('Product Edited', `Product "${updatedProduct.name}" (ID: ${updatedProduct.id}) updated.`, { productId: updatedProduct.id });
     setModal(null);
   };
   
@@ -250,14 +337,14 @@ const App: React.FC = () => {
       const productName = products.find(p => p.id === productId)?.name;
       if (window.confirm(`Are you sure you want to delete the product "${productName}"? This action cannot be undone.`)) {
           setProducts(prev => prev.filter(p => p.id !== productId));
-          addAuditLog('Product Deleted', `Product "${productName}" (ID: ${productId}) was deleted.`);
+          addAuditLog('Product Deleted', `Product "${productName}" (ID: ${productId}) was deleted.`, { productId });
       }
   };
 
   const handleCreateUser = (newUserData: Omit<User, 'id'>) => {
       const newUser: User = { ...newUserData, id: `user-${uuidv4()}` };
       setUsers(prev => [...prev, newUser]);
-      const branchInfo = newUser.branchId ? ` for branch ${branches.find(b => b.id === newUser.branchId)?.name}` : '';
+      const branchInfo = newUser.branchId ? ` for clinic ${branches.find(b => b.id === newUser.branchId)?.name}` : '';
       addAuditLog('User Created', `New ${newUser.role} user "${newUser.name}" created${branchInfo}.`);
   };
 
@@ -273,26 +360,74 @@ const App: React.FC = () => {
       }
   };
 
-  const handleStockAdjustment = (productId: string, branchId: string, newQuantity: number, reason: string) => {
-    setProducts(prev => prev.map(p => 
-        p.id === productId ? { ...p, stockLevels: p.stockLevels.map(sl => sl.branchId === branchId ? { ...sl, quantity: newQuantity } : sl) } : p
-    ));
-    addAuditLog('Stock Adjusted', `Product ID ${productId} at Branch ID ${branchId} set to ${newQuantity}. Reason: ${reason}.`);
+  const handleBatchesUpdate = (productId: string, branchId: string, newBatches: StockBatch[], reason: string) => {
+    setProducts(prev => prev.map(p => {
+        if (p.id !== productId) return p;
+        const otherStockLevels = p.stockLevels.filter(sl => sl.branchId !== branchId);
+        return {
+            ...p,
+            stockLevels: [...otherStockLevels, { branchId, batches: newBatches }]
+        };
+    }));
+    const productName = products.find(p => p.id === productId)?.name;
+    const branchName = branches.find(b => b.id === branchId)?.name;
+    addAuditLog('Stock Adjusted', `Stock for "${productName}" at ${branchName} updated. Reason: ${reason}.`, { productId, branchId });
     setModal(null);
   };
 
-  const handleStockTransfer = (productId: string, fromBranchId: string, toBranchId:string, amount: number) => {
-      setProducts(prev => prev.map(p => p.id === productId ? { ...p, stockLevels: p.stockLevels.map(sl => {
-          if(sl.branchId === fromBranchId) return { ...sl, quantity: sl.quantity - amount };
-          if(sl.branchId === toBranchId) return { ...sl, quantity: sl.quantity + amount };
-          return sl;
-      })} : p));
-      addAuditLog('Stock Transferred', `${amount} units of Product ID ${productId} from ${fromBranchId} to ${toBranchId}.`);
+  const handleStockTransfer = (productId: string, fromBranchId: string, toBranchId:string, batchId: string, amount: number) => {
+      setProducts(prev => {
+        const newProducts = [...prev];
+        const productIndex = newProducts.findIndex(p => p.id === productId);
+        if (productIndex === -1) return prev;
+
+        const product = newProducts[productIndex];
+        
+        // Find source and destination stock levels
+        let fromStockLevel = product.stockLevels.find(sl => sl.branchId === fromBranchId);
+        let toStockLevel = product.stockLevels.find(sl => sl.branchId === toBranchId);
+
+        if (!fromStockLevel) return prev;
+        
+        // Remove batch from source
+        const batchToMove = fromStockLevel.batches.find(b => b.batchId === batchId);
+        if (!batchToMove || batchToMove.quantity < amount) return prev; // Safety check
+        
+        const remainingInBatch = batchToMove.quantity - amount;
+        if (remainingInBatch > 0) {
+            batchToMove.quantity = remainingInBatch;
+        } else {
+            fromStockLevel.batches = fromStockLevel.batches.filter(b => b.batchId !== batchId);
+        }
+        
+        // Add to destination
+        const newBatchForTo: StockBatch = { ...batchToMove, quantity: amount };
+        if (toStockLevel) {
+            // Check if a batch with same expiry date exists to merge
+            const existingBatchIndex = toStockLevel.batches.findIndex(b => b.expiryDate === newBatchForTo.expiryDate);
+            if (existingBatchIndex > -1) {
+                toStockLevel.batches[existingBatchIndex].quantity += amount;
+            } else {
+                toStockLevel.batches.push(newBatchForTo);
+            }
+        } else {
+            // Create new stock level for destination if it doesn't exist
+            toStockLevel = { branchId: toBranchId, batches: [newBatchForTo] };
+            product.stockLevels.push(toStockLevel);
+        }
+
+        return newProducts;
+      });
+
+      const productName = products.find(p => p.id === productId)?.name;
+      const fromName = branches.find(b => b.id === fromBranchId)?.name;
+      const toName = branches.find(b => b.id === toBranchId)?.name;
+      addAuditLog('Stock Transferred', `${amount} units of "${productName}" from ${fromName} to ${toName}.`, { productId });
       setModal(null);
   };
   
   const handleAddSupplier = (name: string, contactEmail: string) => {
-      const newSupplier: Supplier = { id: `sup-${uuidv4()}`, name, contactEmail };
+      const newSupplier: Supplier = { id: `sup-${uuidv4()}`, name, contactEmail, quickReorderEnabled: false };
       setSuppliers(prev => [...prev, newSupplier]);
       addAuditLog('Supplier Added', `New supplier "${name}" added.`);
   };
@@ -311,28 +446,43 @@ const App: React.FC = () => {
           addAuditLog('Supplier Deleted', `Supplier "${supplierName}" (ID: ${supplierId}) was deleted.`);
       }
   };
+   const handleToggleQuickReorder = (supplierId: string, enabled: boolean) => {
+        setSuppliers(prev => prev.map(s => s.id === supplierId ? { ...s, quickReorderEnabled: enabled } : s));
+        const supplierName = suppliers.find(s => s.id === supplierId)?.name;
+        addAuditLog('Setting Changed', `Quick reorder for supplier "${supplierName}" was ${enabled ? 'enabled' : 'disabled'}.`);
+    };
+   const handlePlaceReorder = (productId: string, supplierId: string, quantity: number, orderName: string) => {
+        const productName = products.find(p => p.id === productId)?.name;
+        const supplierName = suppliers.find(s => s.id === supplierId)?.name;
+        addAuditLog(
+            'Reorder Placed',
+            `Order "${orderName}" for ${quantity} units of "${productName}" placed with supplier "${supplierName}".`,
+            { productId }
+        );
+        setModal(null);
+    };
   const handleAddBranch = (name: string) => {
       const newBranch: Branch = { id: `branch-${uuidv4()}`, name };
       setBranches(prev => [...prev, newBranch]);
-      addAuditLog('Branch Added', `New branch "${name}" added.`);
+      addAuditLog('Clinic Added', `New clinic "${name}" added.`);
   };
   const handleEditBranch = (id: string, newName: string) => {
       setBranches(prev => prev.map(b => b.id === id ? { ...b, name: newName } : b));
-      addAuditLog('Branch Edited', `Branch ID "${id}" renamed to "${newName}".`);
+      addAuditLog('Clinic Edited', `Clinic ID "${id}" renamed to "${newName}".`);
   };
   const handleDeleteBranch = (branchId: string) => {
-      if (products.some(p => p.stockLevels.some(sl => sl.branchId === branchId && sl.quantity > 0))) {
-          alert('Cannot delete this branch as it has stock. Please transfer or adjust stock to zero first.');
+      if (products.some(p => p.stockLevels.some(sl => sl.branchId === branchId && sl.batches.reduce((sum, b) => sum + b.quantity, 0) > 0))) {
+          alert('Cannot delete this clinic as it has stock. Please transfer or adjust stock to zero first.');
           return;
       }
       if (users.some(u => u.branchId === branchId)) {
-          alert('Cannot delete this branch as it has users assigned to it. Please reassign users first.');
+          alert('Cannot delete this clinic as it has users assigned to it. Please reassign users first.');
           return;
       }
       const branchName = branches.find(b => b.id === branchId)?.name;
-      if (window.confirm(`Are you sure you want to delete the branch "${branchName}"?`)) {
+      if (window.confirm(`Are you sure you want to delete the clinic "${branchName}"?`)) {
           setBranches(prev => prev.filter(b => b.id !== branchId));
-          addAuditLog('Branch Deleted', `Branch "${branchName}" (ID: ${branchId}) was deleted.`);
+          addAuditLog('Clinic Deleted', `Clinic "${branchName}" (ID: ${branchId}) was deleted.`);
       }
   };
   const handleRunPricePrediction = (supplier: Supplier, supplierProducts: Product[]): Promise<PricePredictionResult[]> => {
@@ -366,37 +516,54 @@ const App: React.FC = () => {
                     kpis={dashboardKpis}
                 />
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2"><TopSlowMovers movers={topSlowMovers} sales={salesByProduct} dateRange={dashboardDateRange} /></div>
-                  <div><BranchPerformanceOverview performanceData={branchPerformanceData} /></div>
+                  <div className="lg:col-span-2"><TopSlowMovers movers={topSlowMovers} usage={usageByProduct} dateRange={dashboardDateRange} /></div>
+                  <div className="space-y-6">
+                    <BranchPerformanceOverview performanceData={performanceDataForView} setCurrentPage={setCurrentPage} />
+                    <ExpiryAlertsCard expiringItems={expiringSoonItems} />
+                  </div>
                 </div>
               </div>
             );
         case 'Supplies':
             return (
                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-                        <div className="xl:col-span-3">
-                           <InventoryTable inventory={filteredInventoryForView} branches={branches} suppliers={suppliers} currentUser={currentUser}
-                               onAdjustStock={(p) => { setSelectedProduct(p); setModal('adjust'); }}
-                               onTransferStock={(p) => { setSelectedProduct(p); setModal('transfer'); }}
-                               onShowQR={(p) => { setSelectedProduct(p); setModal('qr'); }}
-                               onEditProduct={(p) => { setSelectedProduct(p); setModal('edit'); }}
-                               onDeleteProduct={handleDeleteProduct}
-                           />
-                        </div>
-                        <div className="xl:col-span-1"><AddProductForm onAddProduct={handleAddProduct} suppliers={suppliers} branches={branches} currentUser={currentUser} /></div>
-                    </div>
+                    <InventoryTable inventory={filteredInventoryForView} branches={branches} suppliers={suppliers} currentUser={currentUser}
+                        onAdjustStock={(p) => { setSelectedProduct(p); setModal('adjust'); }}
+                        onTransferStock={(p) => { setSelectedProduct(p); setModal('transfer'); }}
+                        onShowQR={(p) => { setSelectedProduct(p); setModal('qr'); }}
+                        onEditProduct={(p) => { setSelectedProduct(p); setModal('edit'); }}
+                        onDeleteProduct={handleDeleteProduct}
+                        onAddNewSupplyClick={() => setModal('add')}
+                    />
                     <SuggestionCards
                         suggestions={filteredInventoryForView.filter(item => !acknowledgedAlerts.includes(item.id))}
                         branches={branches}
+                        suppliers={suppliers}
+                        currentUser={currentUser}
                         onAcknowledge={handleAcknowledge}
+                        onPrepareReorder={(p) => { setSelectedProduct(p); setModal('reorder'); }}
                     />
                 </div>
             );
-        case 'Suppliers': return <SupplierManager suppliers={suppliers} onAddSupplier={handleAddSupplier} onEditSupplier={handleEditSupplier} onDeleteSupplier={handleDeleteSupplier} />;
-        case 'Supplier Insights': return <SupplierInsights suppliers={suppliers} products={products} onRunPrediction={handleRunPricePrediction} addAuditLog={addAuditLog} />;
-        case 'Audit Log': return <AuditLogView logs={auditLogs} />;
-        case 'Branch Admin': return isAdmin ? <BranchAdmin performanceData={branchPerformanceData} onAddBranch={handleAddBranch} onEditBranch={handleEditBranch} onDeleteBranch={handleDeleteBranch} /> : null;
+        case 'Suppliers': return isAdmin ? <SupplierManager 
+            suppliers={suppliers} 
+            inventory={inventoryData}
+            onAddSupplier={handleAddSupplier} 
+            onEditSupplier={handleEditSupplier} 
+            onDeleteSupplier={handleDeleteSupplier} 
+            onToggleQuickReorder={handleToggleQuickReorder} 
+            onPrepareReorder={(p) => { setSelectedProduct(p); setModal('reorder'); }}
+            currentUser={currentUser} /> : null;
+        case 'Supplier Insights': return isAdmin ? <SupplierInsights suppliers={suppliers} products={products} onRunPrediction={handleRunPricePrediction} addAuditLog={addAuditLog} /> : null;
+        case 'Audit Log':
+        case 'Inventory History': 
+            return <InventoryHistoryView 
+                        logs={auditLogs} 
+                        currentUser={currentUser} 
+                        products={products}
+                        branches={branches}
+                    />;
+        case 'Clinic Admin': return isAdmin ? <ClinicAdmin performanceData={branchPerformanceData} onAddClinic={handleAddBranch} onEditClinic={handleEditBranch} onDeleteClinic={handleDeleteBranch} /> : null;
         case 'User Admin': return isAdmin ? <UserAdmin users={users} branches={branches} onCreateUser={handleCreateUser} onDeleteUser={handleDeleteUser} currentUser={currentUser} /> : null;
         default: return <p>Page not found.</p>;
     }
@@ -429,10 +596,12 @@ const App: React.FC = () => {
         <Chatbot inventoryData={inventoryData} suppliers={suppliers} branches={branches} />
 
         {/* Modals */}
-        {modal === 'adjust' && selectedProduct && <StockAdjustmentModal product={selectedProduct} branches={branches} onClose={() => setModal(null)} onAdjust={handleStockAdjustment} currentUser={currentUser} />}
+        {modal === 'adjust' && selectedProduct && <StockAdjustmentModal product={selectedProduct} branches={branches} onClose={() => setModal(null)} onBatchesUpdate={handleBatchesUpdate} currentUser={currentUser} />}
         {modal === 'transfer' && selectedProduct && <StockTransferModal product={selectedProduct} branches={branches} onClose={() => setModal(null)} onTransfer={handleStockTransfer} currentUser={currentUser}/>}
         {modal === 'qr' && selectedProduct && <QRCodeModal product={selectedProduct} onClose={() => setModal(null)} />}
-        {modal === 'edit' && selectedProduct && <EditProductModal product={selectedProduct} suppliers={suppliers} onClose={() => setModal(null)} onSave={handleEditProduct} />}
+        {modal === 'edit' && selectedProduct && <EditProductModal product={selectedProduct} suppliers={suppliers} branches={branches} onClose={() => setModal(null)} onSave={handleEditProduct} />}
+        {modal === 'reorder' && selectedProduct && <ReorderModal product={selectedProduct} onClose={() => setModal(null)} onReorder={handlePlaceReorder} />}
+        {modal === 'add' && <AddProductModal onClose={() => setModal(null)} onAddProduct={handleAddProduct} suppliers={suppliers} branches={branches} currentUser={currentUser} />}
     </div>
   );
 }

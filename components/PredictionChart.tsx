@@ -18,12 +18,13 @@ const PredictionChart: React.FC<PredictionChartProps> = ({ data }) => {
   const chartData = data.map(item => ({
       name: item.name,
       'Current Stock': item.totalStock,
-      'Predicted Sales': item.predictedSales ?? 0,
+      // FIX: Property 'predictedSales' does not exist on type 'InventoryItem'. Changed to 'predictedUsage'.
+      'Predicted Usage': item.predictedUsage ?? 0,
   }));
 
   return (
     <div className="bg-white/10 backdrop-blur-lg p-6 rounded-xl border border-white/20 h-[450px] flex flex-col">
-      <h2 className="text-xl font-semibold text-gray-200 mb-4 shrink-0">Stock vs. Predicted Sales (Next 30d)</h2>
+      <h2 className="text-xl font-semibold text-gray-200 mb-4 shrink-0">Stock vs. Predicted Usage (Next 30d)</h2>
       <div className="w-full h-full relative">
         <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -45,7 +46,7 @@ const PredictionChart: React.FC<PredictionChartProps> = ({ data }) => {
             />
             <Legend wrapperStyle={{ color: '#d1d5db' }} verticalAlign="top" align="right" />
             <Bar dataKey="Current Stock" fill="#3b82f6" />
-            <Bar dataKey="Predicted Sales" fill="#22c55e" />
+            <Bar dataKey="Predicted Usage" fill="#22c55e" />
             </BarChart>
         </ResponsiveContainer>
       </div>

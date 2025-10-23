@@ -1,28 +1,29 @@
 
-import type { Product, Branch, Supplier, HistoricalPrice, User } from './types';
+import type { Product, Branch, Supplier, HistoricalPrice, User, StockBatch } from './types';
+import { v4 as uuidv4 } from 'uuid';
 
 export const USERS: User[] = [
-    { id: 'user-1', name: 'Alex Johnson', username: 'admin', password: 'password123', role: 'Admin' },
+    { id: 'user-1', name: 'Dr. Evelyn Reed', username: 'admin', password: 'password123', role: 'Admin' },
     { id: 'user-2', name: 'Maria Garcia', username: 'maria', password: 'password123', role: 'Staff', branchId: 'branch-1' },
     { id: 'user-3', name: 'Sam Chen', username: 'sam', password: 'password123', role: 'Staff', branchId: 'branch-2' },
     { id: 'user-4', name: 'Priya Patel', username: 'priya', password: 'password123', role: 'Staff', branchId: 'branch-3' },
 ];
 
 export const BRANCHES: Branch[] = [
-  { id: 'branch-1', name: 'Downtown' },
-  { id: 'branch-2', name: 'Westside' },
-  { id: 'branch-3', name: 'North End' },
+  { id: 'branch-1', name: 'Premierlux Downtown' },
+  { id: 'branch-2', name: 'Premierlux Westside' },
+  { id: 'branch-3', name: 'Premierlux North End' },
 ];
 
 export const SUPPLIERS: Supplier[] = [
-  { id: 'sup-1', name: 'Eco Goods Inc.', contactEmail: 'contact@ecogoods.com' },
-  { id: 'sup-2', name: 'Green Supplies Co.', contactEmail: 'sales@greensupplies.co' },
-  { id: 'sup-3', name: 'Sustainable Living Ltd.', contactEmail: 'orders@sustainable.ltd' },
+  { id: 'sup-1', name: 'DentalSupplyCo', contactEmail: 'sales@dentalsupplyco.com', quickReorderEnabled: true },
+  { id: 'sup-2', name: 'MediPro Essentials', contactEmail: 'contact@medipro.com', quickReorderEnabled: false },
+  { id: 'sup-3', name: 'OrthoSource Inc.', contactEmail: 'orders@orthosource.com', quickReorderEnabled: false },
 ];
 
 // Helper function to generate historical data
-const generateHistoricalData = (baseSales: number, basePrice: number, days: number) => {
-    const historicalSales: number[] = [];
+const generateHistoricalData = (baseUsage: number, basePrice: number, days: number) => {
+    const historicalUsage: number[] = [];
     const historicalPrices: HistoricalPrice[] = [];
     let currentPrice = basePrice;
 
@@ -30,10 +31,10 @@ const generateHistoricalData = (baseSales: number, basePrice: number, days: numb
         const date = new Date();
         date.setDate(date.getDate() - i);
         
-        // Sales data (last 7 days for each branch)
+        // Usage data (last 7 days for each branch)
         if (i <= 7) {
-            const dailySales = baseSales + Math.floor(Math.random() * 6) - 3; // Fluctuation
-            historicalSales.push(Math.max(0, dailySales));
+            const dailyUsage = baseUsage + Math.floor(Math.random() * 6) - 3; // Fluctuation
+            historicalUsage.push(Math.max(0, dailyUsage));
         }
 
         // Price data
@@ -45,102 +46,110 @@ const generateHistoricalData = (baseSales: number, basePrice: number, days: numb
             price: parseFloat(currentPrice.toFixed(2)),
         });
     }
-    return { sales: historicalSales, prices: historicalPrices };
+    return { usage: historicalUsage, prices: historicalPrices };
 };
 
-const nearExpiry = new Date();
-nearExpiry.setDate(nearExpiry.getDate() + 25);
-const nearExpiryString = nearExpiry.toISOString().split('T')[0];
+const getDateString = (offsetDays: number): string => {
+    const date = new Date();
+    date.setDate(date.getDate() + offsetDays);
+    return date.toISOString().split('T')[0];
+};
 
 export const PRODUCTS: Product[] = [
   {
     id: 'prod-1',
-    name: 'Bamboo Toothbrush Set (4-pack)',
-    supplierId: 'sup-1',
-    minStockLevel: 50,
-    purchasePrice: 5.00,
+    name: 'Nitrile Gloves (Box of 100)',
+    supplierId: 'sup-2',
+    minStockLevel: 20, // 20 boxes
+    purchasePrice: 15.00,
     stockLevels: [
-      { branchId: 'branch-1', quantity: 85, expiryDate: '2025-12-31' },
-      { branchId: 'branch-2', quantity: 150, expiryDate: '2025-12-31' },
-      { branchId: 'branch-3', quantity: 40, expiryDate: '2025-11-30' },
+      { branchId: 'branch-1', batches: [{ batchId: uuidv4(), quantity: 25, dateReceived: getDateString(-40) }] },
+      { branchId: 'branch-2', batches: [{ batchId: uuidv4(), quantity: 15, dateReceived: getDateString(-40) }] },
+      { branchId: 'branch-3', batches: [{ batchId: uuidv4(), quantity: 40, dateReceived: getDateString(-40) }] },
     ],
-    historicalSales: [
-        { branchId: 'branch-1', sales: generateHistoricalData(10, 5.00, 365).sales },
-        { branchId: 'branch-2', sales: generateHistoricalData(15, 5.00, 365).sales },
-        { branchId: 'branch-3', sales: generateHistoricalData(5, 5.00, 365).sales },
+    historicalUsage: [
+        { branchId: 'branch-1', usage: generateHistoricalData(3, 15.00, 365).usage },
+        { branchId: 'branch-2', usage: generateHistoricalData(5, 15.00, 365).usage },
+        { branchId: 'branch-3', usage: generateHistoricalData(2, 15.00, 365).usage },
     ],
-    historicalPrices: generateHistoricalData(10, 5.00, 365).prices,
+    historicalPrices: generateHistoricalData(3, 15.00, 365).prices,
   },
   {
     id: 'prod-2',
-    name: 'Organic Cotton Tote Bag',
-    supplierId: 'sup-2',
-    minStockLevel: 100,
-    purchasePrice: 12.50,
+    name: 'Anesthetic Cartridges (Box of 50)',
+    supplierId: 'sup-1',
+    minStockLevel: 10, // 10 boxes
+    purchasePrice: 55.00,
     stockLevels: [
-      { branchId: 'branch-1', quantity: 120, expiryDate: '2026-06-30' },
-      { branchId: 'branch-2', quantity: 200, expiryDate: '2026-06-30' },
-      { branchId: 'branch-3', quantity: 90, expiryDate: nearExpiryString },
+      { branchId: 'branch-1', batches: [{ batchId: uuidv4(), quantity: 12, expiryDate: '2025-06-30', dateReceived: getDateString(-60) }] },
+      { branchId: 'branch-2', batches: [
+          { batchId: uuidv4(), quantity: 8, expiryDate: getDateString(25), dateReceived: getDateString(-90) },
+          { batchId: uuidv4(), quantity: 10, expiryDate: getDateString(80), dateReceived: getDateString(-5) } // New batch
+      ] },
+      { branchId: 'branch-3', batches: [{ batchId: uuidv4(), quantity: 15, expiryDate: '2025-08-31', dateReceived: getDateString(-60) }] },
     ],
-    historicalSales: [
-        { branchId: 'branch-1', sales: generateHistoricalData(20, 12.50, 365).sales },
-        { branchId: 'branch-2', sales: generateHistoricalData(25, 12.50, 365).sales },
-        { branchId: 'branch-3', sales: generateHistoricalData(10, 12.50, 365).sales },
+    historicalUsage: [
+        { branchId: 'branch-1', usage: generateHistoricalData(2, 55.00, 365).usage },
+        { branchId: 'branch-2', usage: generateHistoricalData(1, 55.00, 365).usage },
+        { branchId: 'branch-3', usage: generateHistoricalData(3, 55.00, 365).usage },
     ],
-    historicalPrices: generateHistoricalData(20, 12.50, 365).prices,
+    historicalPrices: generateHistoricalData(2, 55.00, 365).prices,
   },
     {
     id: 'prod-3',
-    name: 'Reusable Silicone Food Bags (Set of 3)',
+    name: 'Dental Composite (Syringe)',
     supplierId: 'sup-1',
-    minStockLevel: 40,
-    purchasePrice: 15.00,
+    minStockLevel: 30,
+    purchasePrice: 42.00,
     stockLevels: [
-      { branchId: 'branch-1', quantity: 30, expiryDate: '2025-08-01' },
-      { branchId: 'branch-2', quantity: 50, expiryDate: '2025-08-01' },
-      { branchId: 'branch-3', quantity: 75, expiryDate: '2025-09-01' },
+      { branchId: 'branch-1', batches: [{ batchId: uuidv4(), quantity: 50, expiryDate: '2025-08-01', dateReceived: getDateString(-50) }] },
+      { branchId: 'branch-2', batches: [
+          { batchId: uuidv4(), quantity: 10, expiryDate: getDateString(45), dateReceived: getDateString(-120) }, // Older batch
+          { batchId: uuidv4(), quantity: 15, expiryDate: getDateString(150), dateReceived: getDateString(-10) } // Newer batch
+      ] },
+      { branchId: 'branch-3', batches: [{ batchId: uuidv4(), quantity: 40, expiryDate: '2025-09-01', dateReceived: getDateString(-50) }] },
     ],
-     historicalSales: [
-        { branchId: 'branch-1', sales: generateHistoricalData(8, 15.00, 365).sales },
-        { branchId: 'branch-2', sales: generateHistoricalData(12, 15.00, 365).sales },
-        { branchId: 'branch-3', sales: generateHistoricalData(18, 15.00, 365).sales },
+     historicalUsage: [
+        { branchId: 'branch-1', usage: generateHistoricalData(5, 42.00, 365).usage },
+        { branchId: 'branch-2', usage: generateHistoricalData(8, 42.00, 365).usage },
+        { branchId: 'branch-3', usage: generateHistoricalData(6, 42.00, 365).usage },
     ],
-    historicalPrices: generateHistoricalData(8, 15.00, 365).prices,
+    historicalPrices: generateHistoricalData(5, 42.00, 365).prices,
   },
   {
     id: 'prod-4',
-    name: 'Stainless Steel Water Bottle (25oz)',
+    name: 'Impression Material (Kit)',
     supplierId: 'sup-3',
-    minStockLevel: 50,
-    purchasePrice: 22.00,
+    minStockLevel: 15,
+    purchasePrice: 120.00,
     stockLevels: [
-      { branchId: 'branch-1', quantity: 60, expiryDate: '2027-01-01' },
-      { branchId: 'branch-2', quantity: 25, expiryDate: '2027-01-01' },
-      { branchId: 'branch-3', quantity: 100, expiryDate: '2027-01-01' },
+      { branchId: 'branch-1', batches: [{ batchId: uuidv4(), quantity: 18, dateReceived: getDateString(-20) }] },
+      { branchId: 'branch-2', batches: [{ batchId: uuidv4(), quantity: 25, dateReceived: getDateString(-20) }] },
+      { branchId: 'branch-3', batches: [{ batchId: uuidv4(), quantity: 12, dateReceived: getDateString(-20) }] },
     ],
-    historicalSales: [
-        { branchId: 'branch-1', sales: generateHistoricalData(12, 22.00, 365).sales },
-        { branchId: 'branch-2', sales: generateHistoricalData(20, 22.00, 365).sales },
-        { branchId: 'branch-3', sales: generateHistoricalData(15, 22.00, 365).sales },
+    historicalUsage: [
+        { branchId: 'branch-1', usage: generateHistoricalData(1, 120.00, 365).usage },
+        { branchId: 'branch-2', usage: generateHistoricalData(2, 120.00, 365).usage },
+        { branchId: 'branch-3', usage: generateHistoricalData(1, 120.00, 365).usage },
     ],
-    historicalPrices: generateHistoricalData(12, 22.00, 365).prices,
+    historicalPrices: generateHistoricalData(1, 120.00, 365).prices,
   },
   {
     id: 'prod-5',
-    name: 'Natural Loofah Sponges (5-pack)',
+    name: 'Sterilization Pouches (Box of 200)',
     supplierId: 'sup-2',
-    minStockLevel: 200,
-    purchasePrice: 8.00,
+    minStockLevel: 10,
+    purchasePrice: 25.00,
     stockLevels: [
-      { branchId: 'branch-1', quantity: 250, expiryDate: '2026-02-01' },
-      { branchId: 'branch-2', quantity: 300, expiryDate: '2026-02-01' },
-      { branchId: 'branch-3', quantity: 180, expiryDate: '2026-03-01' },
+      { branchId: 'branch-1', batches: [{ batchId: uuidv4(), quantity: 11, dateReceived: getDateString(-15) }] },
+      { branchId: 'branch-2', batches: [{ batchId: uuidv4(), quantity: 15, dateReceived: getDateString(-15) }] },
+      { branchId: 'branch-3', batches: [{ batchId: uuidv4(), quantity: 8, dateReceived: getDateString(-15) }] },
     ],
-    historicalSales: [
-        { branchId: 'branch-1', sales: generateHistoricalData(5, 8.00, 365).sales },
-        { branchId: 'branch-2', sales: generateHistoricalData(8, 8.00, 365).sales },
-        { branchId: 'branch-3', sales: generateHistoricalData(4, 8.00, 365).sales },
+    historicalUsage: [
+        { branchId: 'branch-1', usage: generateHistoricalData(4, 25.00, 365).usage },
+        { branchId: 'branch-2', usage: generateHistoricalData(5, 25.00, 365).usage },
+        { branchId: 'branch-3', usage: generateHistoricalData(3, 25.00, 365).usage },
     ],
-    historicalPrices: generateHistoricalData(5, 8.00, 365).prices,
+    historicalPrices: generateHistoricalData(4, 25.00, 365).prices,
   },
 ];

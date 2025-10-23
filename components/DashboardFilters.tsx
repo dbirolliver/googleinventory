@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { Branch } from '../types';
 
@@ -30,14 +29,14 @@ const DashboardFilters: React.FC<DashboardFiltersProps> = ({ branches, dateRange
             </div>
             {isAdmin && (
                 <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <label htmlFor="branchFilter" className="text-sm font-medium text-gray-300 shrink-0">Branch:</label>
+                    <label htmlFor="branchFilter" className="text-sm font-medium text-gray-300 shrink-0">Clinic:</label>
                     <select 
                         id="branchFilter"
                         value={branchId}
                         onChange={(e) => setBranchId(e.target.value)}
                         className="w-full px-3 py-2 bg-black/20 text-white border border-white/30 rounded-lg focus:ring-2 focus:ring-blue-400 transition"
                     >
-                        <option value="all" className="bg-gray-800">All Branches</option>
+                        <option value="all" className="bg-gray-800">All Clinics</option>
                         {branches.map(b => (
                             <option key={b.id} value={b.id} className="bg-gray-800">{b.name}</option>
                         ))}

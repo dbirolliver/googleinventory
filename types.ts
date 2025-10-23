@@ -14,6 +14,7 @@ export interface Supplier {
   id: string;
   name: string;
   contactEmail: string;
+  quickReorderEnabled: boolean;
 }
 
 export interface User {
@@ -25,15 +26,21 @@ export interface User {
   branchId?: string;
 }
 
-export interface StockLevel {
-  branchId: string;
+export interface StockBatch {
+  batchId: string;
   quantity: number;
   expiryDate?: string;
+  dateReceived: string;
 }
 
-export interface HistoricalSale {
+export interface StockLevel {
   branchId: string;
-  sales: number[]; // e.g., sales data for the last 7 days
+  batches: StockBatch[];
+}
+
+export interface HistoricalUsage {
+  branchId: string;
+  usage: number[]; // e.g., usage data for the last 7 days
 }
 
 export interface HistoricalPrice {
@@ -46,7 +53,7 @@ export interface Product {
   name: string;
   supplierId: string;
   stockLevels: StockLevel[];
-  historicalSales: HistoricalSale[];
+  historicalUsage: HistoricalUsage[];
   historicalPrices: HistoricalPrice[];
   minStockLevel?: number;
   purchasePrice?: number;
@@ -54,7 +61,7 @@ export interface Product {
 
 export interface PredictionResult {
   productId: string;
-  predictedSales: number;
+  predictedUsage: number;
   restockSuggestion: string;
   urgency: Urgency;
   branchSuggestions?: {
@@ -79,6 +86,8 @@ export interface AuditLog {
   timestamp: string;
   action: string;
   details: string;
+  productId?: string;
+  branchId?: string;
 }
 
 export interface BranchPerformance {
@@ -87,5 +96,5 @@ export interface BranchPerformance {
     totalProducts: number;
     totalStockUnits: number;
     highUrgencyAlerts: number;
-    topSeller?: Product;
+    topUsedItem?: Product;
 }
