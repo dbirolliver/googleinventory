@@ -1,21 +1,22 @@
 
+
 import type { Product, Branch, Supplier, HistoricalPrice, User, StockBatch } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
-export const USERS: User[] = [
+export const INITIAL_USERS: User[] = [
     { id: 'user-1', name: 'Dr. Evelyn Reed', username: 'admin', password: 'password123', role: 'Admin' },
     { id: 'user-2', name: 'Maria Garcia', username: 'maria', password: 'password123', role: 'Staff', branchId: 'branch-1' },
     { id: 'user-3', name: 'Sam Chen', username: 'sam', password: 'password123', role: 'Staff', branchId: 'branch-2' },
     { id: 'user-4', name: 'Priya Patel', username: 'priya', password: 'password123', role: 'Staff', branchId: 'branch-3' },
 ];
 
-export const BRANCHES: Branch[] = [
+export const INITIAL_BRANCHES: Branch[] = [
   { id: 'branch-1', name: 'Premierlux Downtown' },
   { id: 'branch-2', name: 'Premierlux Westside' },
   { id: 'branch-3', name: 'Premierlux North End' },
 ];
 
-export const SUPPLIERS: Supplier[] = [
+export const INITIAL_SUPPLIERS: Supplier[] = [
   { id: 'sup-1', name: 'DentalSupplyCo', contactEmail: 'sales@dentalsupplyco.com', quickReorderEnabled: true },
   { id: 'sup-2', name: 'MediPro Essentials', contactEmail: 'contact@medipro.com', quickReorderEnabled: false },
   { id: 'sup-3', name: 'OrthoSource Inc.', contactEmail: 'orders@orthosource.com', quickReorderEnabled: false },
@@ -55,7 +56,7 @@ const getDateString = (offsetDays: number): string => {
     return date.toISOString().split('T')[0];
 };
 
-export const PRODUCTS: Product[] = [
+export const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'prod-1',
     name: 'Nitrile Gloves (Box of 100)',

@@ -3,9 +3,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Product, Branch, Supplier, InventoryItem, PredictionResult, PricePredictionResult, BranchPerformance, AuditLog, User, StockLevel, StockBatch } from './types';
 
-// Mock data and services
-import { PRODUCTS, BRANCHES, SUPPLIERS, USERS } from './data';
+// Mock data and services (now initial data for DB)
+import { INITIAL_PRODUCTS, INITIAL_BRANCHES, INITIAL_SUPPLIERS, INITIAL_USERS } from './data';
 import { getRestockPredictions, getSupplierPricePrediction } from './services/geminiService';
+import { openDatabase, getAllData, putAllData, putData, deleteData } from './services/dbService'; // Import DB service
 
 // Components
 import Sidebar from './components/Sidebar';
@@ -37,7 +38,7 @@ import AddProductModal from './components/AddProductModal';
 const App: React.FC = () => {
   // Authentication and User State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(USERS);
+  const [users, setUsers] = useState<User[]>([]);
 
   // Core Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -64,18 +65,68 @@ const App: React.FC = () => {
   // --- Data & Auth ---
   
   const addAuditLog = useCallback((action: string, details: string, context?: { productId?: string; branchId?: string; }) => {
-    setAuditLogs(prev => [
-      { id: uuidv4(), timestamp: new Date().toISOString(), action, details, ...context },
-      ...prev
-    ]);
-  }, []);
+    const newLog: AuditLog = { id: uuidv4(), timestamp: new Date().toISOString(), action, details, ...context };
+    setAuditLogs(prev => {
+        const updatedLogs = [newLog, ...prev];
+        putAllData('auditLogs', updatedLogs).catch(err => console.error("Failed to save audit log to DB", err));
+        return updatedLogs;
+    });
+  }, []); // Removed auditLogs from dependency array to prevent stale closure for putAllData
 
   useEffect(() => {
-    setProducts(PRODUCTS);
-    setBranches(BRANCHES);
-    setSuppliers(SUPPLIERS);
-    addAuditLog('System Startup', 'Application initialized and mock data loaded.');
-    setIsLoading(false);
+    const loadData = async () => {
+      try {
+        await openDatabase();
+
+        let loadedProducts = await getAllData<Product>('products');
+        let loadedBranches = await getAllData<Branch>('branches');
+        let loadedSuppliers = await getAllData<Supplier>('suppliers');
+        let loadedUsers = await getAllData<User>('users');
+        let loadedAuditLogs = await getAllData<AuditLog>('auditLogs');
+
+        if (loadedProducts.length === 0) {
+          console.log('No products in DB, loading initial mock data.');
+          loadedProducts = INITIAL_PRODUCTS;
+          await putAllData('products', INITIAL_PRODUCTS);
+        }
+        if (loadedBranches.length === 0) {
+            console.log('No branches in DB, loading initial mock data.');
+            loadedBranches = INITIAL_BRANCHES;
+            await putAllData('branches', INITIAL_BRANCHES);
+        }
+        if (loadedSuppliers.length === 0) {
+            console.log('No suppliers in DB, loading initial mock data.');
+            loadedSuppliers = INITIAL_SUPPLIERS;
+            await putAllData('suppliers', INITIAL_SUPPLIERS);
+        }
+        if (loadedUsers.length === 0) {
+            console.log('No users in DB, loading initial mock data.');
+            loadedUsers = INITIAL_USERS;
+            await putAllData('users', INITIAL_USERS);
+        }
+        // Audit logs are not critical to initialize if empty, they will be added dynamically
+        
+        setProducts(loadedProducts);
+        setBranches(loadedBranches);
+        setSuppliers(loadedSuppliers);
+        setUsers(loadedUsers);
+        setAuditLogs(loadedAuditLogs);
+
+        addAuditLog('System Startup', 'Application initialized and data loaded/migrated.');
+      } catch (error) {
+        console.error("Failed to load data from IndexedDB:", error);
+        // Fallback to initial mock data if DB fails
+        setProducts(INITIAL_PRODUCTS);
+        setBranches(INITIAL_BRANCHES);
+        setSuppliers(INITIAL_SUPPLIERS);
+        setUsers(INITIAL_USERS);
+        addAuditLog('System Startup', 'Application initialized, failed to load persistent data, using mock data.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
   }, [addAuditLog]);
 
   const runRestockPredictions = useCallback(async () => {
@@ -147,7 +198,7 @@ const App: React.FC = () => {
   const inventoryData: InventoryItem[] = useMemo(() => {
     return products.map(p => {
       const prediction = predictions.find(pred => pred.productId === p.id);
-      const totalStock = p.stockLevels.reduce((sum, sl) => sum + sl.batches.reduce((batchSum, batch) => batchSum + batch.quantity, 0), 0);
+      const totalStock = p.stockLevels.reduce((sum, sl) => sl.batches.reduce((batchSum, batch) => batchSum + batch.quantity, 0) + sum, 0);
       return { ...p, ...prediction, totalStock };
     });
   }, [products, predictions]);
@@ -322,13 +373,21 @@ const App: React.FC = () => {
       historicalUsage: branches.map(b => ({ branchId: b.id, usage: Array(7).fill(0) })),
       historicalPrices: [{ date: new Date().toISOString().split('T')[0], price: newProductData.purchasePrice || 0 }]
     };
-    setProducts(prev => [...prev, newProduct]);
+    setProducts(prev => {
+        const updatedProducts = [...prev, newProduct];
+        putAllData('products', updatedProducts).catch(err => console.error("Failed to save products to DB", err));
+        return updatedProducts;
+    });
     addAuditLog('Product Added', `New product "${newProduct.name}" created.`);
     setModal(null);
   };
   
   const handleEditProduct = (updatedProduct: Product) => {
-    setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+    setProducts(prev => {
+        const updatedProducts = prev.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+        putAllData('products', updatedProducts).catch(err => console.error("Failed to save products to DB", err));
+        return updatedProducts;
+    });
     addAuditLog('Product Edited', `Product "${updatedProduct.name}" (ID: ${updatedProduct.id}) updated.`, { productId: updatedProduct.id });
     setModal(null);
   };
@@ -336,14 +395,22 @@ const App: React.FC = () => {
   const handleDeleteProduct = (productId: string) => {
       const productName = products.find(p => p.id === productId)?.name;
       if (window.confirm(`Are you sure you want to delete the product "${productName}"? This action cannot be undone.`)) {
-          setProducts(prev => prev.filter(p => p.id !== productId));
+          setProducts(prev => {
+              const updatedProducts = prev.filter(p => p.id !== productId);
+              putAllData('products', updatedProducts).catch(err => console.error("Failed to delete product from DB", err));
+              return updatedProducts;
+          });
           addAuditLog('Product Deleted', `Product "${productName}" (ID: ${productId}) was deleted.`, { productId });
       }
   };
 
   const handleCreateUser = (newUserData: Omit<User, 'id'>) => {
       const newUser: User = { ...newUserData, id: `user-${uuidv4()}` };
-      setUsers(prev => [...prev, newUser]);
+      setUsers(prev => {
+          const updatedUsers = [...prev, newUser];
+          putAllData('users', updatedUsers).catch(err => console.error("Failed to save users to DB", err));
+          return updatedUsers;
+      });
       const branchInfo = newUser.branchId ? ` for clinic ${branches.find(b => b.id === newUser.branchId)?.name}` : '';
       addAuditLog('User Created', `New ${newUser.role} user "${newUser.name}" created${branchInfo}.`);
   };
@@ -355,20 +422,28 @@ const App: React.FC = () => {
       }
       const userName = users.find(u => u.id === userId)?.name;
       if (window.confirm(`Are you sure you want to delete the user "${userName}"?`)) {
-          setUsers(prev => prev.filter(u => u.id !== userId));
+          setUsers(prev => {
+              const updatedUsers = prev.filter(u => u.id !== userId);
+              putAllData('users', updatedUsers).catch(err => console.error("Failed to delete user from DB", err));
+              return updatedUsers;
+          });
           addAuditLog('User Deleted', `User "${userName}" (ID: ${userId}) was deleted.`);
       }
   };
 
   const handleBatchesUpdate = (productId: string, branchId: string, newBatches: StockBatch[], reason: string) => {
-    setProducts(prev => prev.map(p => {
-        if (p.id !== productId) return p;
-        const otherStockLevels = p.stockLevels.filter(sl => sl.branchId !== branchId);
-        return {
-            ...p,
-            stockLevels: [...otherStockLevels, { branchId, batches: newBatches }]
-        };
-    }));
+    setProducts(prev => {
+        const updatedProducts = prev.map(p => {
+            if (p.id !== productId) return p;
+            const otherStockLevels = p.stockLevels.filter(sl => sl.branchId !== branchId);
+            return {
+                ...p,
+                stockLevels: [...otherStockLevels, { branchId, batches: newBatches }]
+            };
+        });
+        putAllData('products', updatedProducts).catch(err => console.error("Failed to update product batches in DB", err));
+        return updatedProducts;
+    });
     const productName = products.find(p => p.id === productId)?.name;
     const branchName = branches.find(b => b.id === branchId)?.name;
     addAuditLog('Stock Adjusted', `Stock for "${productName}" at ${branchName} updated. Reason: ${reason}.`, { productId, branchId });
@@ -389,7 +464,7 @@ const App: React.FC = () => {
 
         if (!fromStockLevel) return prev;
         
-        // Remove batch from source
+        // Find the batch to move and ensure it exists and has enough quantity
         const batchToMove = fromStockLevel.batches.find(b => b.batchId === batchId);
         if (!batchToMove || batchToMove.quantity < amount) return prev; // Safety check
         
@@ -415,7 +490,7 @@ const App: React.FC = () => {
             toStockLevel = { branchId: toBranchId, batches: [newBatchForTo] };
             product.stockLevels.push(toStockLevel);
         }
-
+        putAllData('products', newProducts).catch(err => console.error("Failed to transfer stock in DB", err));
         return newProducts;
       });
 
@@ -428,11 +503,19 @@ const App: React.FC = () => {
   
   const handleAddSupplier = (name: string, contactEmail: string) => {
       const newSupplier: Supplier = { id: `sup-${uuidv4()}`, name, contactEmail, quickReorderEnabled: false };
-      setSuppliers(prev => [...prev, newSupplier]);
+      setSuppliers(prev => {
+          const updatedSuppliers = [...prev, newSupplier];
+          putAllData('suppliers', updatedSuppliers).catch(err => console.error("Failed to save suppliers to DB", err));
+          return updatedSuppliers;
+      });
       addAuditLog('Supplier Added', `New supplier "${name}" added.`);
   };
   const handleEditSupplier = (id: string, name: string, contactEmail: string) => {
-      setSuppliers(prev => prev.map(s => s.id === id ? { ...s, name, contactEmail } : s));
+      setSuppliers(prev => {
+          const updatedSuppliers = prev.map(s => s.id === id ? { ...s, name, contactEmail } : s);
+          putAllData('suppliers', updatedSuppliers).catch(err => console.error("Failed to save suppliers to DB", err));
+          return updatedSuppliers;
+      });
       addAuditLog('Supplier Edited', `Supplier ID "${id}" details updated.`);
   };
   const handleDeleteSupplier = (supplierId: string) => {
@@ -442,12 +525,20 @@ const App: React.FC = () => {
       }
       const supplierName = suppliers.find(s => s.id === supplierId)?.name;
       if (window.confirm(`Are you sure you want to delete the supplier "${supplierName}"?`)) {
-          setSuppliers(prev => prev.filter(s => s.id !== supplierId));
+          setSuppliers(prev => {
+              const updatedSuppliers = prev.filter(s => s.id !== supplierId);
+              putAllData('suppliers', updatedSuppliers).catch(err => console.error("Failed to delete supplier from DB", err));
+              return updatedSuppliers;
+          });
           addAuditLog('Supplier Deleted', `Supplier "${supplierName}" (ID: ${supplierId}) was deleted.`);
       }
   };
    const handleToggleQuickReorder = (supplierId: string, enabled: boolean) => {
-        setSuppliers(prev => prev.map(s => s.id === supplierId ? { ...s, quickReorderEnabled: enabled } : s));
+        setSuppliers(prev => {
+            const updatedSuppliers = prev.map(s => s.id === supplierId ? { ...s, quickReorderEnabled: enabled } : s);
+            putAllData('suppliers', updatedSuppliers).catch(err => console.error("Failed to update supplier in DB", err));
+            return updatedSuppliers;
+        });
         const supplierName = suppliers.find(s => s.id === supplierId)?.name;
         addAuditLog('Setting Changed', `Quick reorder for supplier "${supplierName}" was ${enabled ? 'enabled' : 'disabled'}.`);
     };
@@ -463,11 +554,19 @@ const App: React.FC = () => {
     };
   const handleAddBranch = (name: string) => {
       const newBranch: Branch = { id: `branch-${uuidv4()}`, name };
-      setBranches(prev => [...prev, newBranch]);
+      setBranches(prev => {
+          const updatedBranches = [...prev, newBranch];
+          putAllData('branches', updatedBranches).catch(err => console.error("Failed to save branches to DB", err));
+          return updatedBranches;
+      });
       addAuditLog('Clinic Added', `New clinic "${name}" added.`);
   };
   const handleEditBranch = (id: string, newName: string) => {
-      setBranches(prev => prev.map(b => b.id === id ? { ...b, name: newName } : b));
+      setBranches(prev => {
+          const updatedBranches = prev.map(b => b.id === id ? { ...b, name: newName } : b);
+          putAllData('branches', updatedBranches).catch(err => console.error("Failed to save branches to DB", err));
+          return updatedBranches;
+      });
       addAuditLog('Clinic Edited', `Clinic ID "${id}" renamed to "${newName}".`);
   };
   const handleDeleteBranch = (branchId: string) => {
@@ -481,7 +580,11 @@ const App: React.FC = () => {
       }
       const branchName = branches.find(b => b.id === branchId)?.name;
       if (window.confirm(`Are you sure you want to delete the clinic "${branchName}"?`)) {
-          setBranches(prev => prev.filter(b => b.id !== branchId));
+          setBranches(prev => {
+              const updatedBranches = prev.filter(b => b.id !== branchId);
+              putAllData('branches', updatedBranches).catch(err => console.error("Failed to delete branch from DB", err));
+              return updatedBranches;
+          });
           addAuditLog('Clinic Deleted', `Clinic "${branchName}" (ID: ${branchId}) was deleted.`);
       }
   };
