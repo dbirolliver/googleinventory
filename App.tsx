@@ -299,9 +299,13 @@ const App: React.FC = () => {
   const dashboardKpis = useMemo(() => {
     const totalInventoryValue = dashboardFilteredData.reduce((sum: number, item) => sum + (item.totalStock * (item.purchasePrice ?? 0)), 0);
     
+    // The `sum: number` type annotation and the initial `0` for reduce ensure `sum` is always a number.
+    // The intermediate `effectivePrice` and `productTotal` are also correctly typed as numbers.
     const totalUsageValue = Array.from(usageByProduct.entries()).reduce((sum: number, [productId, quantity]) => {
       const product = products.find(p => p.id === productId);
-      return sum + (quantity * (product?.purchasePrice ?? 0));
+      const effectivePrice = product?.purchasePrice ?? 0; // Ensure price is a number
+      const productTotal = quantity * effectivePrice; // Result of number * number is number
+      return sum + productTotal; // sum (number) + productTotal (number)
     }, 0);
 
     const stockTurnover = totalInventoryValue > 0 ? totalUsageValue / totalInventoryValue : 0;

@@ -1,5 +1,6 @@
 
 
+
 import type { Product, Branch, Supplier, User, AuditLog } from '../types';
 
 const DB_NAME = 'PremierluxDentalDB';

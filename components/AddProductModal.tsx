@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 // FIX: Import StockBatch type for creating new batches
 import type { Product, Supplier, Branch, StockLevel, User, StockBatch } from '../types';

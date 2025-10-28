@@ -1,20 +1,8 @@
-// FIX: Add a TypeScript declaration for `ImportMetaEnv` to correctly type `import.meta.env.VITE_API_KEY`.
-declare global {
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-
-  interface ImportMetaEnv {
-    readonly VITE_API_KEY?: string;
-    // add other environment variables here if needed
-  }
-}
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Product, PredictionResult, Branch, Supplier, InventoryItem, PricePredictionResult } from '../types';
 import { Urgency } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY as string });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 export const getRestockPredictions = async (products: Product[], branches: Branch[], suppliers: Supplier[]): Promise<PredictionResult[]> => {
   const model = "gemini-2.5-pro";

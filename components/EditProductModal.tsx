@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import type { Product, Supplier, StockLevel, Branch } from '../types';
 

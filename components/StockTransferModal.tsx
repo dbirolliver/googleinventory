@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import type { InventoryItem, Branch, StockBatch, User } from '../types';
 

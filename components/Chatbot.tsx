@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { getChatbotResponse } from '../services/geminiService';
 import type { InventoryItem, Supplier, Branch } from '../types';
